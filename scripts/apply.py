@@ -3,11 +3,14 @@ import json
 import os
 import sys
 import random
-from datetime import datetime
 import logging
 
-# Setup Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Enhanced Logging Setup
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 logger = logging.getLogger(__name__)
 
 try:
@@ -17,91 +20,104 @@ except ImportError:
     sys.exit(1)
 
 async def fill_dp_field_with_select2(page, bank_dp_value):
-    """Handles the Select2 search-and-select interaction for the DP (Bank) field."""
     try:
-        logger.info(f"Attempting to fill DP field with value: {bank_dp_value}")
-        
-        # Find and click the Select2 container
+        logger.info(f"Step: Opening DP dropdown for {bank_dp_value}")
         select2_container = page.locator("span.select2.select2-container--default")
-        
-        if not await select2_container.is_visible():
-            logger.warning("Select2 container not visible, attempting to locate by aria-label")
-            select2_container = page.locator('[aria-label="Search for option"]').first
-        
         await select2_container.click()
-        await page.wait_for_timeout(500)
         
-        # Find search input
-        search_input = page.locator(".select2-search__field, input.select2-search__field")
-        if not await search_input.is_visible():
-            await page.wait_for_selector("input.select2-search__field", timeout=5000)
-            search_input = page.locator("input.select2-search__field")
-        
+        logger.info("Step: Typing bank name into search...")
+        search_input = page.locator("input.select2-search__field")
         await search_input.fill(bank_dp_value)
-        await page.wait_for_timeout(500)
+        await page.wait_for_timeout(1000)
         
-        # Select matching option
         matching_option = page.locator(".select2-results__option").filter(has_text=bank_dp_value).first
-        
         if await matching_option.is_visible():
             await matching_option.click()
-            logger.info(f"Successfully selected DP: {bank_dp_value}")
+            logger.info(f"SUCCESS: Bank {bank_dp_value} selected.")
             return True
         else:
-            logger.error(f"Could not find matching option for DP: {bank_dp_value}")
+            logger.error(f"FAIL: Bank {bank_dp_value} not found in dropdown list.")
             return False
-            
     except Exception as e:
-        logger.error(f"Error filling DP field with Select2: {str(e)}")
+        logger.error(f"EXCEPTION in DP field: {str(e)}")
         return False
 
 async def process_account(browser, account):
-    """Processes a single IPO application."""
     context = None
-    page = None
-    
     try:
-        # Create context with ignore_https_errors to handle target site certificate issues
         context = await browser.new_context(ignore_https_errors=True)
         page = await context.new_page()
         
-        logger.info(f"Processing account: {account.get('username', 'unknown')}")
-        
-        # Step 1: Login
-        await page.goto("https://meroshare.cdsc.com.np/", wait_until="networkidle")
+        # 1. Login Page
+        logger.info(f"--- Starting Account: {account.get('username')} ---")
+        logger.info("Action: Navigating to Login Page...")
+        await page.goto("https://meroshare.cdsc.com.np/", wait_until="networkidle", timeout=60000)
+        logger.info("Status: Login Page loaded successfully.")
+
+        # 2. Perform Login
+        logger.info(f"Action: Entering credentials for {account['username']}...")
         await page.fill("input[name='username']", account['username'])
         await page.fill("input[name='password']", account['password'])
         await page.click("button:has-text('Login')")
         
+        # Verify Login Success
         await page.wait_for_load_state("networkidle")
-        await page.wait_for_timeout(2000)
-        
-        # Step 2: Navigate to ASBA
+        if "dashboard" in page.url or await page.locator(".side-menu").is_visible():
+            logger.info("SUCCESS: Logged in successfully. Dashboard reached.")
+        else:
+            logger.warning("Check: Login might have failed or is slow.")
+
+        # 3. Navigate to ASBA
+        logger.info("Action: Navigating to ASBA (Apply for Issue) page...")
         await page.goto("https://meroshare.cdsc.com.np/#/asba", wait_until="networkidle")
-        
-        # Step 3: Click Apply
-        apply_button = page.locator("//tr[contains(., 'Ordinary Shares')]//button[text()='Apply']")
-        await apply_button.first.wait_for(state="visible", timeout=10000)
-        await apply_button.first.click()
         await page.wait_for_timeout(2000)
+        logger.info(f"Status: Currently on page: {page.url}")
+
+        # 4. Find Apply Button
+        logger.info("Action: Searching for 'Ordinary Shares' Apply button...")
+        # We search for the row first to see if it exists
+        row_locator = page.locator("//tr[contains(., 'Ordinary Shares')]")
+        rows_count = await row_locator.count()
         
-        # Step 4: Fill Form
+        if rows_count == 0:
+            logger.error("FAIL: 'Ordinary Shares' row not found in the table. Is there an open IPO?")
+            return False
+            
+        logger.info(f"Status: Found {rows_count} Ordinary Share row(s).")
+        apply_button = row_locator.locator("button:has-text('Apply')").first
+        
+        if await apply_button.is_visible():
+            logger.info("Action: Clicking Apply button...")
+            await apply_button.click()
+            await page.wait_for_load_state("networkidle")
+            logger.info("Status: Application form opened.")
+        else:
+            logger.error("FAIL: Apply button exists but is not visible/clickable.")
+            return False
+
+        # 5. Fill Form
+        logger.info("Action: Filling application details (Units, DP, CRN)...")
         await page.locator("input[name='units']").fill(str(account['units']))
         await fill_dp_field_with_select2(page, str(account['dp']))
         await page.locator("input[name='crn']").fill(str(account['crn']))
         
-        checkbox = page.locator("input[type='checkbox'][name*='disclaimer']").first
-        await checkbox.check()
+        logger.info("Action: Checking disclaimer...")
+        await page.locator("input[type='checkbox'][name*='disclaimer']").first.check()
         
-        # Step 5: PIN & Submit
+        # 6. Final PIN and Submit
+        logger.info("Action: Entering Transaction PIN...")
         await page.locator("input[name='pin']").fill(str(account['pin']))
+        
+        logger.info("Action: Clicking final SUBMIT button...")
         await page.click("button:has-text('Submit')")
         
-        logger.info(f"Application submitted for {account['username']}")
+        # Wait for success message
+        await page.wait_for_timeout(3000)
+        logger.info(f"FINISH: Application submitted for {account['username']}.")
         return True
         
     except Exception as e:
-        logger.error(f"Error processing account {account.get('username', 'unknown')}: {str(e)}")
+        logger.error(f"CRITICAL ERROR for {account.get('username')}: {str(e)}")
         return False
     finally:
         if context:
@@ -112,16 +128,10 @@ async def main():
         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
         accounts = json.loads(accounts_json)
         
-        if not accounts:
-            logger.error("No accounts provided in ACCOUNTS_JSON")
-            return
-        
         async with async_playwright() as p:
             token = os.getenv('BROWSERLESS_TOKEN')
-            
             if token:
                 logger.info("Connecting to Browserless.io (CDP Mode)...")
-                # UPDATED: Using CDP endpoint to ignore version mismatch errors
                 endpoint = f"wss://production-sfo.browserless.io?token={token}"
                 browser = await p.chromium.connect_over_cdp(endpoint)
             else:
@@ -130,16 +140,12 @@ async def main():
             
             try:
                 for i, account in enumerate(accounts):
-                    logger.info(f"--- Account {i+1}/{len(accounts)} ---")
+                    logger.info(f"\n=== ACCOUNT {i+1} OF {len(accounts)} ===")
                     await process_account(browser, account)
-                    if i < len(accounts) - 1:
-                        await asyncio.sleep(random.uniform(3, 7))
             finally:
                 await browser.close()
-    
     except Exception as e:
-        logger.error(f"Fatal error in main: {str(e)}")
-        sys.exit(1)
+        logger.error(f"FATAL: {str(e)}")
 
 if __name__ == "__main__":
     asyncio.run(main())
