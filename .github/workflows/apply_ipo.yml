@@ -1,34 +1,44 @@
-name: Run IPO Application
+name: Mero Share IPO Bulk Applicator
 
 on:
-  # Allows you to run this manualy from the Actions tab
-  workflow_dispatch:
-  # Optional: Schedule it to run at a specific time (UTC)
-  # schedule:
-  #   - cron: '0 4 * * *' 
+  repository_dispatch:
+    types: [trigger_ipo_bot]
 
 jobs:
-  apply-ipo:
+  apply_ipo:
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
+      
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install playwright
-          # Note: We don't need 'playwright install' when using Browserless!
-
-      - name: Run script
+          pip install playwright pandas
+          playwright install chromium
+      
+      - name: Mask sensitive data
+        run: |
+          echo "::add-mask::${{ github.event.client_payload.accounts }}"
+      
+      - name: Run IPO application script
         env:
-          # These must be set in your GitHub Repo -> Settings -> Secrets and variables -> Actions
+          ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
           BROWSERLESS_TOKEN: ${{ secrets.BROWSERLESS_TOKEN }}
-          ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
-        run: python scripts/apply.py
+        run: |
+          python scripts/apply.py
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipo-application-logs
+          path: |
+            *.log
+            apply_results.json
