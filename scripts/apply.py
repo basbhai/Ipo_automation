@@ -16,38 +16,24 @@ except ImportError:
     sys.exit(1)
 
 async def logout_user(page):
-    """Safely logs out the user using the direct desktop logout link from the DOM."""
+    """Safely logs out the user."""
     try:
-        logger.info("Step: Attempting Logout...")
-        # Direct selector based on the DOM you provided
         logout_btn = page.locator(".header-menu__item--logout-desktop-view a")
-        
         if await logout_btn.is_visible():
             await logout_btn.click()
-            # Wait for login page to confirm logout
-            await page.wait_for_selector("#username", timeout=10000)
+            await page.wait_for_selector("#username", timeout=5000)
             logger.info("✅ Logged out successfully.")
-        else:
-            logger.warning("Logout button not visible, forcing redirect to login.")
-            await page.goto("https://meroshare.cdsc.com.np/#/login")
-    except Exception as e:
-        logger.warning(f"Logout failed: {e}")
-        # Final safety fallback to clear state
+    except:
         await page.goto("https://meroshare.cdsc.com.np/#/login")
 
 async def select_login_dp(page, bank_code):
-    """Handles the DP dropdown on the LOGIN page."""
+    """Handles the DP dropdown."""
     try:
-        logger.info(f"Step: Selecting DP code {bank_code}...")
         await page.click("span.select2-selection--single")
-        await page.wait_for_timeout(500)
-        
         search_input = page.locator("input.select2-search__field")
         await search_input.fill(str(bank_code))
         await page.wait_for_timeout(1000) 
-        
         option_locator = page.locator(f"li.select2-results__option:has-text('({bank_code})')")
-        
         if await option_locator.is_visible():
             await option_locator.click()
             return True
@@ -57,10 +43,13 @@ async def select_login_dp(page, bank_code):
         return False
 
 async def process_account(browser, account):
-    """Core logic to apply for IPO and then logout."""
+    """Core logic with improved row detection."""
+    if not browser.is_connected():
+        logger.error("Browser disconnected. Skipping account.")
+        return False
+        
     context = None
     try:
-        # Create a completely fresh context per account
         context = await browser.new_context(ignore_https_errors=True, viewport={'width': 1280, 'height': 800})
         page = await context.new_page()
         
@@ -76,99 +65,93 @@ async def process_account(browser, account):
         await page.click("button[type='submit']")
         
         await page.wait_for_selector(".navbar", timeout=20000)
-        logger.info("✅ Login Successful.")
-
+        
         # 2. Navigate to ASBA
         await page.goto("https://meroshare.cdsc.com.np/#/asba", wait_until="networkidle")
-        await page.wait_for_timeout(3000) 
+        
+        # Wait for the table rows to actually exist
+        await page.wait_for_selector(".company-list tr", timeout=15000)
+        await page.wait_for_timeout(2000) 
 
-        # 3. Locate Ordinary Shares Row
-        row_selector = "tr:has(span.isin:has-text('Ordinary Shares'))"
-        apply_btn = page.locator(f"{row_selector} button.btn-issue:has-text('Apply')").first
+        # 3. Find Apply Button
+        # Instead of strict 'Ordinary Shares', we look for any row that has an active 'Apply' button
+        # This avoids issues if the naming in the ISIN column varies.
+        apply_btn = page.locator("button.btn-issue:has-text('Apply')").first
         
         if await apply_btn.is_visible():
+            # Get the company name for logs
+            company_name = await page.locator("span.company-name").first.inner_text()
+            logger.info(f"✅ Found IPO: {company_name}. Opening form...")
             await apply_btn.click()
-            logger.info("✅ Apply form opened.")
         else:
-            logger.warning("❌ 'Apply' button not found. Already applied or session issue.")
+            logger.warning("❌ No active 'Apply' buttons found. (Already applied or none available)")
             await logout_user(page)
             return False
 
-        # 4. Form Filling (Wizard Step 1)
+        # 4. Form Filling
         await page.wait_for_selector("#selectBank", state="visible")
         await page.select_option("#selectBank", index=1)
         
-        # Account Selection
         await page.wait_for_selector("#accountNumber option:not([value=''])", state="attached")
         await page.select_option("#accountNumber", index=1)
         
         await page.wait_for_timeout(1000)
         
-        # Units and Amount Calculation
         await page.fill("#appliedKitta", str(account['units']))
         await page.focus("#appliedKitta")
         await page.keyboard.press("Tab") 
         await page.locator("#appliedKitta").dispatch_event("blur")
         
-        await page.wait_for_timeout(1000)
+        await page.wait_for_timeout(1500)
         amount = await page.input_value("#amount")
         logger.info(f"Step: Units {account['units']} -> NPR {amount}")
 
-        # CRN & Disclaimer
         await page.fill("#crnNumber", str(account['crn']))
         await page.check("#disclaimer", force=True)
-        
         await page.click("button[type='submit']:has-text('Proceed')")
 
-        # 5. PIN & Final Submit (Wizard Step 2)
+        # 5. PIN & Submit
         await page.wait_for_selector("#transactionPIN", state="visible")
         await page.fill("#transactionPIN", str(account['pin']))
         
-        # FINAL SUBMIT
         await page.click("button[type='submit']:has-text('Apply')")
-        await page.wait_for_timeout(2000)
-        logger.info(f"🚀 SUCCESS: IPO applied for {account['username']}!")
+        await page.wait_for_timeout(3000)
+        logger.info(f"🚀 SUCCESS: Applied for {account['username']}")
         
-        # --- LOGOUT BEFORE NEXT ACCOUNT ---
         await logout_user(page)
         return True
 
     except Exception as e:
         logger.error(f"ERROR for {account.get('username')}: {str(e)}")
-        try:
-            await logout_user(page)
-        except:
-            pass
         return False
     finally:
         if context:
             await context.close()
 
 async def main():
+    browser = None
     try:
-        # Load accounts and token from environment variables
         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
         accounts = json.loads(accounts_json)
         token = os.getenv('BROWSERLESS_TOKEN')
 
-        if not token:
-            logger.error("BROWSERLESS_TOKEN is missing!")
-            return
-
         async with async_playwright() as p:
-            logger.info("Connecting to Browserless.io...")
             endpoint = f"wss://production-sfo.browserless.io?token={token}"
             browser = await p.chromium.connect_over_cdp(endpoint)
             
             for account in accounts:
+                if not browser.is_connected():
+                    logger.info("Reconnecting to browser...")
+                    browser = await p.chromium.connect_over_cdp(endpoint)
+                
                 await process_account(browser, account)
-                # Random delay to prevent IP blocking/detection
-                await asyncio.sleep(random.uniform(5, 10))
+                # Significant delay to allow MeroShare/Browserless to breathe
+                await asyncio.sleep(8)
             
             await browser.close()
-            logger.info("🏁 All accounts processed. Browser closed.")
+            logger.info("🏁 Finished.")
     except Exception as e:
-        logger.info(f"FATAL SYSTEM ERROR: {str(e)}")
+        logger.error(f"FATAL: {str(e)}")
 
 if __name__ == "__main__":
     asyncio.run(main())
