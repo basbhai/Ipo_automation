@@ -5,7 +5,7 @@ import sys
 import random
 import logging
 
-# Setup Logging for GitHub Actions Console
+# Setup Logging for GitHub Console
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ except ImportError:
     sys.exit(1)
 
 async def select_login_dp(page, bank_code):
-    """Handles the DP dropdown on the LOGIN page."""
+    """Handles the DP dropdown on the LOGIN page using the Code (e.g., 13700)."""
     try:
         logger.info(f"Step: Opening DP dropdown to search for {bank_code}...")
         await page.click("span.select2-selection--single")
@@ -40,14 +40,15 @@ async def select_login_dp(page, bank_code):
         return False
 
 async def process_account(browser, account):
-    """The core logic migrated from your Colab version."""
+    """Integrated core logic from Colab version for GitHub Actions."""
     context = None
     try:
+        # Financial sites often have SSL issues on headless runners; ignore_https_errors fixes this.
         context = await browser.new_context(ignore_https_errors=True, viewport={'width': 1280, 'height': 800})
         page = await context.new_page()
         
         # 1. Login
-        logger.info(f"--- Processing Account: {account.get('username')} ---")
+        logger.info(f"--- Starting Account: {account.get('username')} ---")
         await page.goto("https://meroshare.cdsc.com.np/", wait_until="networkidle", timeout=60000)
         
         if not await select_login_dp(page, account['dp']):
@@ -64,19 +65,19 @@ async def process_account(browser, account):
         await page.goto("https://meroshare.cdsc.com.np/#/asba", wait_until="networkidle")
         await page.wait_for_timeout(2000)
 
-        # 3. Find Ordinary Share
-        # Logic from your Colab: uses .company-list and span.isin
+        # 3. Find Ordinary Share & Click Apply
         ipo_row = page.locator(".company-list", has=page.locator("span.isin", has_text="Ordinary Shares")).first
         apply_btn = ipo_row.locator("button.btn-issue:has-text('Apply')")
         
         if await apply_btn.count() > 0:
             await apply_btn.click()
-            logger.info("Step: Apply form opened.")
+            logger.info("SUCCESS: Apply form opened.")
         else:
             logger.warning("FAIL: No active 'Ordinary Shares' found.")
             return False
 
-        # 4. Form Filling (Wizard Step 1)
+        # 4. Wizard Step 1: Form Filling
+        # Dynamic Bank & Account Selection (picks first available there)
         await page.wait_for_selector("#selectBank", state="visible")
         await page.select_option("#selectBank", index=1)
         
@@ -85,34 +86,35 @@ async def process_account(browser, account):
         
         await page.wait_for_timeout(1000)
         branch = await page.input_value("#selectBranch")
-        logger.info(f"Step: Bank and Account selected. Branch: {branch}")
+        logger.info(f"Step: Bank selected. Branch detected: {branch}")
 
-        # Applied Kitta & Amount Calculation
+        # Applied Kitta & Amount Trigger
         await page.fill("#appliedKitta", str(account['units']))
         await page.focus("#appliedKitta")
         await page.keyboard.press("Tab") 
         await page.locator("#appliedKitta").dispatch_event("blur")
         
+        # Wait for auto-calculation
         await page.wait_for_timeout(1000)
         amount = await page.input_value("#amount")
-        logger.info(f"Step: Units {account['units']} entered. Amount: {amount}")
+        logger.info(f"Step: Units {account['units']} entered. Total Amount: NPR {amount}")
 
         # CRN & Disclaimer
         await page.fill("#crnNumber", str(account['crn']))
         await page.check("#disclaimer", force=True)
         
-        # Proceed
+        # Proceed to PIN
         await page.click("button[type='submit']:has-text('Proceed')")
         logger.info("Step: Proceeding to PIN screen...")
 
-        # 5. PIN & Final Submit (Wizard Step 2)
+        # 5. Wizard Step 2: PIN & Final Submit
         await page.wait_for_selector("#transactionPIN", state="visible")
         await page.fill("#transactionPIN", str(account['pin']))
         
-        # Final Submit click
+        # FINAL APPLY CLICK
         await page.click("button[type='submit']:has-text('Apply')")
         await page.wait_for_timeout(2000)
-        logger.info(f"🚀 SUCCESS: IPO applied for {account['username']}")
+        logger.info(f"🚀 SUCCESS: IPO submitted for {account['username']}!")
         
         return True
 
@@ -125,26 +127,25 @@ async def process_account(browser, account):
 
 async def main():
     try:
-        # Get multiple accounts from GitHub Secret
+        # GitHub Secrets: ACCOUNTS_JSON should be a stringified list of objects
         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
         accounts = json.loads(accounts_json)
         token = os.getenv('BROWSERLESS_TOKEN')
 
         if not token:
-            logger.error("BROWSERLESS_TOKEN is missing!")
+            logger.error("BROWSERLESS_TOKEN is missing. Please set it in GitHub Secrets.")
             return
 
         async with async_playwright() as p:
-            logger.info("Connecting to Browserless...")
+            logger.info("Connecting to Browserless.io...")
             endpoint = f"wss://production-sfo.browserless.io?token={token}"
             browser = await p.chromium.connect_over_cdp(endpoint)
             
             try:
                 for account in accounts:
-                    success = await process_account(browser, account)
-                    if success:
-                        # Random delay between accounts to avoid bot detection
-                        await asyncio.sleep(random.uniform(5, 10))
+                    await process_account(browser, account)
+                    # Gentle delay between accounts to prevent IP flagging
+                    await asyncio.sleep(random.uniform(5, 10))
             finally:
                 await browser.close()
     except Exception as e:
