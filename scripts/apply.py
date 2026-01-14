@@ -139,20 +139,19 @@ async def process_account(browser, account):
         if context:
             await context.close()
 
+
 async def main():
     try:
         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
         accounts = json.loads(accounts_json)
-        token = os.getenv('BROWSERLESS_TOKEN')
-
-        if not token:
-            logger.error("BROWSERLESS_TOKEN is missing.")
-            return
 
         async with async_playwright() as p:
-            logger.info("Connecting to Browserless.io...")
-            endpoint = f"wss://production-sfo.browserless.io?token={token}&timeout=3000000"
-            browser = await p.chromium.connect_over_cdp(endpoint)
+            logger.info("Launching local Chromium...")
+            # Launch local browser in headless mode
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox"]
+            )
             
             try:
                 for account in accounts:
@@ -163,6 +162,33 @@ async def main():
                 await browser.close()
     except Exception as e:
         logger.error(f"FATAL ERROR: {str(e)}")
+
+#-----------------------Below is for Browserless.io==================================================
+#====================================================================================================
+# async def main():
+#     try:
+#         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
+#         accounts = json.loads(accounts_json)
+#         token = os.getenv('BROWSERLESS_TOKEN')
+
+#         if not token:
+#             logger.error("BROWSERLESS_TOKEN is missing.")
+#             return
+
+#         async with async_playwright() as p:
+#             logger.info("Connecting to Browserless.io...")
+#             endpoint = f"wss://production-sfo.browserless.io?token={token}&timeout=3000000"
+#             browser = await p.chromium.connect_over_cdp(endpoint)
+            
+#             try:
+#                 for account in accounts:
+#                     await process_account(browser, account)
+#                     # Gentle delay between accounts
+#                     await asyncio.sleep(random.uniform(5, 10))
+#             finally:
+#                 await browser.close()
+#     except Exception as e:
+#         logger.error(f"FATAL ERROR: {str(e)}")
 
 if __name__ == "__main__":
     asyncio.run(main())
