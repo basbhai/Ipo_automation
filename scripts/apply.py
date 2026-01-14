@@ -151,7 +151,7 @@ async def main():
 
         async with async_playwright() as p:
             logger.info("Connecting to Browserless.io...")
-            endpoint = f"wss://production-sfo.browserless.io?token={token}"
+            endpoint = f"wss://production-sfo.browserless.io?token={token}&timeout=3000000"
             browser = await p.chromium.connect_over_cdp(endpoint)
             
             try:
