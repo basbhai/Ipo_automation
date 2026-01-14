@@ -82,15 +82,28 @@ async def process_account(browser, account):
         await page.wait_for_timeout(2000)
 
         # 3. Find Ordinary Share & Click Apply
+
         ipo_row = page.locator(".company-list", has=page.locator("span.isin", has_text="Ordinary Shares")).first
-        apply_btn = ipo_row.locator("button.btn-issue:has-text('Apply')")
         
-        if await apply_btn.count() > 0:
+        # Check if row exists first
+        if await ipo_row.count() == 0:
+            logger.warning("FAIL: No active 'Ordinary Shares' found in the list.")
+            await handle_logout(page)
+            return False
+
+        # Define locators for both buttons
+        apply_btn = ipo_row.locator("button.btn-issue:has-text('Apply')")
+        edit_btn = ipo_row.locator("button.btn-issue:has-text('Edit')")
+
+        if await apply_btn.is_visible():
             await apply_btn.click()
             logger.info("SUCCESS: Apply form opened.")
+        elif await edit_btn.is_visible():
+            logger.info("SKIP: IPO already applied for this account (found 'Edit' button).")
+            await handle_logout(page)
+            return True # Returning True because the goal (applying) is effectively met
         else:
-            logger.warning("FAIL: No active 'Ordinary Shares' found.")
-            # Even if no IPO, we should logout if session exists
+            logger.warning("FAIL: Found 'Ordinary Shares' but neither 'Apply' nor 'Edit' buttons are visible.")
             await handle_logout(page)
             return False
 
