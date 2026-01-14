@@ -113,17 +113,17 @@ async def main():
         accounts = json.loads(accounts_json)
         
         if not accounts:
-            logger.error("No accounts provided")
+            logger.error("No accounts provided in ACCOUNTS_JSON")
             return
         
         async with async_playwright() as p:
             token = os.getenv('BROWSERLESS_TOKEN')
             
             if token:
-                logger.info("Connecting to Browserless.io (Production Endpoint)...")
-                # FIXED: Updated endpoint to avoid certificate mismatch
-                endpoint = f"wss://production-sfo.browserless.io/chromium/playwright?token={token}"
-                browser = await p.chromium.connect(endpoint)
+                logger.info("Connecting to Browserless.io (CDP Mode)...")
+                # UPDATED: Using CDP endpoint to ignore version mismatch errors
+                endpoint = f"wss://production-sfo.browserless.io?token={token}"
+                browser = await p.chromium.connect_over_cdp(endpoint)
             else:
                 logger.info("Starting local browser...")
                 browser = await p.chromium.launch(headless=True)
@@ -138,7 +138,7 @@ async def main():
                 await browser.close()
     
     except Exception as e:
-        logger.error(f"Fatal error: {str(e)}")
+        logger.error(f"Fatal error in main: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":
