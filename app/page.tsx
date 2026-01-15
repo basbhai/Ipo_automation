@@ -8,6 +8,7 @@ import DashboardHeader from "@/components/dashboard-header"
 import CSVUploadArea from "@/components/csv-upload-area"
 import AccountsTable from "@/components/accounts-table"
 import ProcessingStatus from "@/components/processing-status"
+import ProcessingResults from "@/components/processing-results-new"
 
 interface Account {
   dp: string
@@ -22,6 +23,7 @@ export default function DashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [status, setStatus] = useState<string>("")
+  const [jobId, setJobId] = useState<string>("")
 
   const downloadTemplate = () => {
     const template = "dp,username,password,pin,crn,units\n1234567,user@meroshare,password123,1234,12345678,100\n"
@@ -87,6 +89,11 @@ export default function DashboardPage() {
 
     try {
       setIsProcessing(true)
+      
+      // Generate unique jobId
+      const newJobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      setJobId(newJobId)
+      
       setStatus("Initiating IPO application process...")
 
       const response = await fetch("/api/dispatch", {
@@ -95,6 +102,7 @@ export default function DashboardPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          jobId: newJobId,
           accounts: accounts,
         }),
       })
@@ -102,12 +110,14 @@ export default function DashboardPage() {
       const responseData = await response.json()
 
       if (response.ok) {
-        setStatus("✓ Process initiated! Check GitHub Actions for real-time progress.")
+        setStatus("✓ Process initiated! Waiting for results...")
       } else {
         setStatus(`Error: ${responseData.message || "Failed to start process"}`)
+        setJobId("")
       }
     } catch (error) {
       setStatus(`Error: ${error instanceof Error ? error.message : "Unknown error"}`)
+      setJobId("")
     } finally {
       setIsProcessing(false)
     }
@@ -148,6 +158,9 @@ export default function DashboardPage() {
             <AccountsTable accounts={accounts} />
           </Card>
         )}
+
+        {/* Processing Results */}
+        {jobId && <ProcessingResults jobId={jobId} isPolling={!!jobId} />}
       </div>
     </main>
   )

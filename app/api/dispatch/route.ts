@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 
 interface DispatchPayload {
+  jobId: string
   accounts: Array<{
     dp: string
     username: string
@@ -55,8 +56,13 @@ export async function POST(request: NextRequest) {
 
     // Convert accounts to JSON string for GitHub dispatch
     const accountsJson = JSON.stringify(payload.accounts)
+    
+    // Get the app URL for results callback
+    const appUrl = request.headers.get("x-forwarded-proto") && request.headers.get("x-forwarded-host") 
+      ? `${request.headers.get("x-forwarded-proto")}://${request.headers.get("x-forwarded-host")}`
+      : `http://${request.headers.get("host")}`
 
-    console.log(`[v0] Dispatching to GitHub: owner=${owner}, repo=${repo}`)
+    console.log(`[v0] Dispatching to GitHub: owner=${owner}, repo=${repo}, jobId=${payload.jobId}`)
 
     // Trigger GitHub Actions workflow
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {
@@ -69,6 +75,8 @@ export async function POST(request: NextRequest) {
         event_type: "trigger_ipo_bot",
         client_payload: {
           accounts: accountsJson,
+          jobId: payload.jobId,
+          resultsWebhookUrl: `${appUrl}/api/results`,
         },
       }),
     })
@@ -78,6 +86,9 @@ export async function POST(request: NextRequest) {
       console.error("GitHub dispatch error:", errorData)
       return NextResponse.json(
         {
+      message: "IPO application process initiated successfully",
+      jobId: payload.jobId,
+   
           message: `Failed to trigger workflow. Check that GITHUB_PAT has 'repo' permissions and GITHUB_REPO is correct (got owner='${owner}', repo='${repo}').`,
         },
         { status: response.status },

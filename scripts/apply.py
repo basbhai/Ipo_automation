@@ -4,6 +4,8 @@ import os
 import sys
 import random
 import logging
+import aiohttp
+from datetime import datetime
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -68,7 +70,11 @@ async def process_account(browser, account):
         await page.goto("https://meroshare.cdsc.com.np/", wait_until="networkidle", timeout=60000)
         
         if not await select_login_dp(page, account['dp']):
-            return False
+            return {
+                "username": account['username'],
+                "status": "failed",
+                "message": f"Failed to select DP {account['dp']}"
+            }
 
         await page.fill("#username", str(account['username']))
         await page.fill("#password", str(account['password']))
@@ -85,11 +91,11 @@ async def process_account(browser, account):
 
         ipo_row = page.locator(".company-list", has=page.locator("span.isin", has_text="Ordinary Shares")).first
         
-        # Check if row exists first
-        if await ipo_row.count() == 0:
-            logger.warning("FAIL: No active 'Ordinary Shares' found in the list.")
-            await handle_logout(page)
-            return False
+        # Check if {
+                "username": account['username'],
+                "status": "failed",
+                "message": "No active Ordinary Shares found"
+            }
 
         # Define locators for both buttons
         apply_btn = ipo_row.locator("button.btn-issue:has-text('Apply')")
@@ -101,7 +107,19 @@ async def process_account(browser, account):
         elif await edit_btn.is_visible():
             logger.info("SKIP: IPO already applied for this account (found 'Edit' button).")
             await handle_logout(page)
-            return True # Returning True because the goal (applying) is effectively met
+            return {
+                "username": account['username'],
+                "status": "success",
+                "message": "IPO already applied (Edit button found)"
+            }
+        else:
+            logger.warning("FAIL: Found 'Ordinary Shares' but neither 'Apply' nor 'Edit' buttons are visible.")
+            await handle_logout(page)
+            return {
+                "username": account['username'],
+                "status": "failed",
+                "message": "Apply/Edit buttons not visible"
+            }# Returning True because the goal (applying) is effectively met
         else:
             logger.warning("FAIL: Found 'Ordinary Shares' but neither 'Apply' nor 'Edit' buttons are visible.")
             await handle_logout(page)
@@ -131,29 +149,68 @@ async def process_account(browser, account):
         await page.check("#disclaimer", force=True)
         
         await page.click("button[type='submit']:has-text('Proceed')")
-        logger.info("Step: Proceeding to PIN screen...")
-
-        # 5. Wizard Step 2: PIN & Final Submit
-        await page.wait_for_selector("#transactionPIN", state="visible")
-        await page.fill("#transactionPIN", str(account['pin']))
-        
-        await page.click("button[type='submit']:has-text('Apply')")
-        await page.wait_for_timeout(2000)
-        logger.info(f"🚀 SUCCESS: IPO submitted for {account['username']}!")
-        
-        # 6. Logout
-        await handle_logout(page)
-        return True
+        logger.{
+            "username": account['username'],
+            "status": "success",
+            "message": "IPO successfully applied"
+        }
 
     except Exception as e:
         logger.error(f"CRITICAL ERROR for {account.get('username')}: {str(e)}")
-        return False
-    finally:
-        if context:
-            await context.close()
+        return {
+async def send_results_to_api(results, job_id, webhook_url):
+    """Send results back to the API endpoint."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            payload = {
+                "jobId": job_id,
+                "results": results
+            }
+            async with session.post(webhook_url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 200:
+                    logger.info(f"Results successfully sent to API for jobId: {job_id}")
+                else:
+                    logger.error(f"Failed to send results: HTTP {resp.status}")
+    except Exception as e:
+        logger.error(f"Error sending results to API: {str(e)}")
 
 #============================= below is for githu action ===========================
 #===================================================================================
+async def main():
+    try:
+        accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
+        job_id = os.getenv('JOB_ID', 'unknown')
+        webhook_url = os.getenv('RESULTS_WEBHOOK_URL', '')
+        
+        accounts = json.loads(accounts_json)
+        results = []
+
+        async with async_playwright() as p:
+            logger.info("Launching local Chromium...")
+            # Launch local browser in headless mode
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox"]
+            )
+            
+            try:
+                for account in accounts:
+                    result = await process_account(browser, account)
+                    results.append({
+                        **result,
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    # Gentle delay between accounts
+                    await asyncio.sleep(random.uniform(5, 10))
+            finally:
+                await browser.close()
+        
+        # Send results back to the API if webhook URL is provided
+        if webhook_url:
+            await send_results_to_api(results, job_id, webhook_url)
+        else:
+            logger.info(f"No webhook URL provided. Results: {json.dumps(results, indent=2)}")
+            ===============================================
 async def main():
     try:
         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
