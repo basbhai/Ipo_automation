@@ -152,7 +152,8 @@ async def process_account(browser, account):
         if context:
             await context.close()
 
-
+#============================= below is for githu action ===========================
+#===================================================================================
 async def main():
     try:
         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
