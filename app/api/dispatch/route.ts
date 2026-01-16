@@ -58,13 +58,17 @@ export async function POST(request: NextRequest) {
     const accountsJson = JSON.stringify(payload.accounts)
     
     // Get the app URL for webhook callbacks
-    const appUrl = request.headers.get("x-forwarded-proto") && request.headers.get("x-forwarded-host") 
-      ? `${request.headers.get("x-forwarded-proto")}://${request.headers.get("x-forwarded-host")}`
-      : `http://${request.headers.get("host")}`
+    const proto = request.headers.get("x-forwarded-proto") || "https"
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host")
+    const appUrl = `${proto}://${host}`
 
     const jobId = payload.jobId || `job_${Date.now()}`
 
+    console.log(`[Dispatch] App URL: ${appUrl}`)
     console.log(`[Dispatch] Triggering workflow for jobId=${jobId}, accounts=${payload.accounts.length}`)
+    console.log(`[Dispatch] Webhook URLs:`)
+    console.log(`  - logsWebhookUrl: ${appUrl}/api/logs`)
+    console.log(`  - resultsWebhookUrl: ${appUrl}/api/results`)
 
     // Trigger GitHub Actions workflow
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {

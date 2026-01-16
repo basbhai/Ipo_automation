@@ -21,9 +21,17 @@ except ImportError:
 JOB_ID = os.getenv('JOB_ID', 'unknown')
 LOGS_WEBHOOK_URL = os.getenv('LOGS_WEBHOOK_URL', '')
 
+# Debug: Log webhook configuration at startup
+logger.info(f"=== Webhook Configuration ===")
+logger.info(f"JOB_ID: {JOB_ID}")
+logger.info(f"LOGS_WEBHOOK_URL: {'SET' if LOGS_WEBHOOK_URL else 'NOT SET'}")
+logger.info(f"============================")
+
 async def send_log(level: str, message: str, account: str = None, status: str = None):
     """Send a log entry to the API webhook."""
     if not LOGS_WEBHOOK_URL:
+        # Still log locally even if webhook is not set
+        logger.info(f"[{level.upper()}] {message}")
         return
     
     try:
@@ -251,7 +259,17 @@ async def main():
         accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
         results_webhook_url = os.getenv('RESULTS_WEBHOOK_URL', '')
         
-        accounts = json.loads(accounts_json)
+        logger.info(f"ACCOUNTS_JSON env var: {'SET' if accounts_json and accounts_json != '[]' else 'EMPTY or DEFAULT'}")
+        logger.info(f"RESULTS_WEBHOOK_URL env var: {'SET' if results_webhook_url else 'NOT SET'}")
+        
+        try:
+            accounts = json.loads(accounts_json)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse ACCOUNTS_JSON: {str(e)}")
+            logger.error(f"Raw ACCOUNTS_JSON: {accounts_json}")
+            await send_log("error", f"Failed to parse accounts: {str(e)}", status="failed")
+            return
+        
         results = []
 
         logger.info(f"Processing {len(accounts)} account(s)...")
