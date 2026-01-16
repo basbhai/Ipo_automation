@@ -40,7 +40,11 @@ jobs:
           echo "::add-mask::${{ github.event.client_payload.accounts }}"
       
       - name: Run IPO application script
-
+        env:
+          JOB_ID: ${{ github.event.client_payload.jobId }}
+          LOGS_WEBHOOK_URL: ${{ github.event.client_payload.logsWebhookUrl }}
+          ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
+          RESULTS_WEBHOOK_URL: ${{ github.event.client_payload.resultsWebhookUrl }}
         run: |
           python scripts/apply.py
       
