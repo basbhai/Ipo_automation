@@ -13,6 +13,12 @@ jobs:
   apply_ipo:
     runs-on: ubuntu-latest
     
+    env:
+      JOB_ID: ${{ github.event.client_payload.jobId }}
+      LOGS_WEBHOOK_URL: ${{ github.event.client_payload.logsWebhookUrl }}
+      ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
+      RESULTS_WEBHOOK_URL: ${{ github.event.client_payload.resultsWebhookUrl }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,7 +31,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install playwright pandas
+          pip install playwright pandas aiohttp
           # Install Chromium and its system dependencies
           python -m playwright install chromium --with-deps
       
@@ -34,11 +40,7 @@ jobs:
           echo "::add-mask::${{ github.event.client_payload.accounts }}"
       
       - name: Run IPO application script
-        env:
-          JOB_ID: ${{ github.event.client_payload.jobId }}
-          LOGS_WEBHOOK_URL: ${{ github.event.client_payload.logsWebhookUrl }}
-          ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
-          RESULTS_WEBHOOK_URL: ${{ github.event.client_payload.resultsWebhookUrl }}
+
         run: |
           python scripts/apply.py
       
