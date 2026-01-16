@@ -9,6 +9,7 @@ import CSVUploadArea from "@/components/csv-upload-area"
 import AccountsTable from "@/components/accounts-table"
 import ProcessingStatus from "@/components/processing-status"
 import ProcessingResults from "@/components/processing-results-new"
+import LogsViewer from "@/components/logs-viewer"
 
 interface Account {
   dp: string
@@ -156,6 +157,13 @@ export default function DashboardPage() {
           <Card className="mt-6 p-6">
             <h2 className="text-xl font-semibold mb-4">Loaded Accounts</h2>
             <AccountsTable accounts={accounts} />
+          </Card>
+        )}
+
+        {/* Logs Section - Show when processing */}
+        {jobId && (
+          <Card className="mt-6 p-6">
+            <LogsViewer jobId={jobId} />
           </Card>
         )}
 

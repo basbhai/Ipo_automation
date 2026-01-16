@@ -57,12 +57,14 @@ export async function POST(request: NextRequest) {
     // Convert accounts to JSON string for GitHub dispatch
     const accountsJson = JSON.stringify(payload.accounts)
     
-    // Get the app URL for results callback
+    // Get the app URL for webhook callbacks
     const appUrl = request.headers.get("x-forwarded-proto") && request.headers.get("x-forwarded-host") 
       ? `${request.headers.get("x-forwarded-proto")}://${request.headers.get("x-forwarded-host")}`
       : `http://${request.headers.get("host")}`
 
-    console.log(`[v0] Dispatching to GitHub: owner=${owner}, repo=${repo}, jobId=${payload.jobId}`)
+    const jobId = payload.jobId || `job_${Date.now()}`
+
+    console.log(`[Dispatch] Triggering workflow for jobId=${jobId}, accounts=${payload.accounts.length}`)
 
     // Trigger GitHub Actions workflow
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {
@@ -75,7 +77,8 @@ export async function POST(request: NextRequest) {
         event_type: "trigger_ipo_bot",
         client_payload: {
           accounts: accountsJson,
-          jobId: payload.jobId,
+          jobId: jobId,
+          logsWebhookUrl: `${appUrl}/api/logs`,
           resultsWebhookUrl: `${appUrl}/api/results`,
         },
       }),
@@ -86,16 +89,20 @@ export async function POST(request: NextRequest) {
       console.error("GitHub dispatch error:", errorData)
       return NextResponse.json(
         {
-      message: "IPO application process initiated successfully",
-      jobId: payload.jobId,
-   
           message: `Failed to trigger workflow. Check that GITHUB_PAT has 'repo' permissions and GITHUB_REPO is correct (got owner='${owner}', repo='${repo}').`,
         },
         { status: response.status },
       )
     }
 
-    return NextResponse.json({ message: "IPO application process initiated successfully" }, { status: 200 })
+    console.log(`[Dispatch] Workflow triggered successfully for jobId=${jobId}`)
+    return NextResponse.json(
+      {
+        message: "IPO application process initiated successfully",
+        jobId: jobId,
+      },
+      { status: 200 }
+    )
   } catch (error) {
     console.error("API error:", error)
     return NextResponse.json({ message: "Internal server error" }, { status: 500 })
