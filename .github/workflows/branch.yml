@@ -1,8 +1,8 @@
-name: Mero Share IPO Bulk Applicator
+name: IPO_applier
 
 on:
   repository_dispatch:
-    types: [trigger_ipo_bot]
+    types: [ipo_bot]
 
 jobs:
   apply_ipo:
