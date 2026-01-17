@@ -6,9 +6,12 @@ import random
 import logging
 
 # Setup Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(levelname)s: %(message)s', # Just "INFO: Message"
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
 logger = logging.getLogger(__name__)
-
 try:
     from playwright.async_api import async_playwright
 except ImportError:

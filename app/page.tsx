@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react" // Added useRef and useEffect
 import Papa from "papaparse"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -22,6 +22,15 @@ export default function DashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [status, setStatus] = useState<string>("")
+  
+  // NEW: State for live logs
+  const [logs, setLogs] = useState<string[]>([])
+  const logEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll logs to bottom
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [logs])
 
   const downloadTemplate = () => {
     const template = "dp,username,password,pin,crn,units\n13000,12345678,Password123,1111,10012345678,10\n"
@@ -49,11 +58,9 @@ export default function DashboardPage() {
             crn: String(row.crn || ""),
             units: String(row.units || ""),
           }))
-
           const validAccounts = parsedAccounts.filter((acc: Account) => {
             return acc.dp && acc.username && acc.password && acc.pin && acc.crn && acc.units
           })
-
           setAccounts(validAccounts)
           setStatus(`Loaded ${validAccounts.length} valid account(s).`)
         },
@@ -71,45 +78,46 @@ export default function DashboardPage() {
 
     try {
       setIsProcessing(true)
-      setStatus("Initiating process...")
+      setStatus("Initiating local process...")
+      setLogs([]) // Clear previous logs
 
-      /* ===========================================================
-      LOCAL DEBUGGING (ACTIVE)
-      ===========================================================
-      */
       const response = await fetch("/api/local", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accounts }),
       })
 
-      /* ===========================================================
-      GITHUB ACTION (LIVE MODE - UNCOMMENT THIS WHEN DEPLOYING)
-      ===========================================================
-      
-      const response = await fetch("/api/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accounts }),
-      })
-      */
-
-      const responseData = await response.json()
-
-      if (response.ok) {
-        setStatus("✓ Success! Check your terminal for local logs.")
-      } else {
-        setStatus(`Error: ${responseData.message}`)
+      if (!response.body) {
+        throw new Error("No response body")
       }
+
+      // STREAM READING LOGIC
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+
+        const textChunk = decoder.decode(value, { stream: true })
+        
+        // Split chunk by newline and add to logs
+        const newLines = textChunk.split("\n").filter(line => line.trim() !== "")
+        setLogs((prev) => [...prev, ...newLines])
+      }
+
+      setStatus("✓ Process Completed.")
     } catch (error) {
+      console.error(error)
       setStatus("Connection error.")
+      setLogs((prev) => [...prev, "❌ ERROR: Failed to connect to local server."])
     } finally {
       setIsProcessing(false)
     }
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background pb-20">
       <DashboardHeader />
       <div className="container mx-auto px-4 py-8">
         <div className="grid gap-6 md:grid-cols-2">
@@ -130,6 +138,25 @@ export default function DashboardPage() {
             onStartProcess={startProcess}
           />
         </div>
+
+        {/* NEW: LIVE LOG VIEWER */}
+        {(logs.length > 0 || isProcessing) && (
+          <Card className="mt-6 p-4 bg-slate-950 text-slate-50 font-mono text-sm border-slate-800 shadow-xl">
+            <div className="flex items-center justify-between mb-2 border-b border-slate-800 pb-2">
+              <span className="text-xs font-bold uppercase tracking-widest text-slate-400">Live Execution Logs</span>
+              {isProcessing && <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>}
+            </div>
+            <div className="h-64 overflow-y-auto space-y-1 scrollbar-hide">
+              {logs.map((log, index) => (
+                <div key={index} className="break-all">
+                  <span className="text-slate-500 mr-2">[{index + 1}]</span>
+                  {log}
+                </div>
+              ))}
+              <div ref={logEndRef} />
+            </div>
+          </Card>
+        )}
 
         {accounts.length > 0 && (
           <Card className="mt-6 p-6">

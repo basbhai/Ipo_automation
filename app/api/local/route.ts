@@ -1,56 +1,53 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { spawn } from "child_process"
-import path from "path"
-
-// 1. You still need this to define the structure of incoming data
-interface DispatchPayload {
-  accounts: Array<{
-    dp: string
-    username: string
-    password: string
-    pin: string
-    crn: string
-    units: string
-  }>
-}
+import { type NextRequest } from "next/server";
+import { spawn } from "child_process";
+import path from "path";
 
 export async function POST(request: NextRequest) {
-  try {
-    // 2. TypeScript uses the interface here to validate 'payload'
-    const payload: DispatchPayload = await request.json()
+  const payload = await request.json();
+  const scriptPath = path.join(process.cwd(), "scripts", "localapply.py");
+  const accountsData = JSON.stringify(payload.accounts);
 
-    if (!payload.accounts || payload.accounts.length === 0) {
-      return NextResponse.json({ message: "No accounts provided" }, { status: 400 })
-    }
+  const encoder = new TextEncoder();
 
-    // 3. Setup the local file path
-    // path.join ensures this works on both Windows and Mac/Linux
-    const scriptPath = path.join(process.cwd(), "scripts", "localapply.py")
+  const stream = new ReadableStream({
+    start(controller) {
+      // Launch Python
+      const pythonProcess = spawn("python", [scriptPath, accountsData]);
 
-    // 4. Convert the accounts array to a string to pass as a CLI argument
-    const accountsData = JSON.stringify(payload.accounts)
+      // Handle Standard Output (Direct prints)
+      pythonProcess.stdout.on("data", (data) => {
+        controller.enqueue(encoder.encode(data.toString()));
+      });
 
-    // 5. Execute the Python script locally
-    // Change "python" to "python3" if you are on Mac/Linux
-    const pythonProcess = spawn("python", [scriptPath, accountsData])
+      // Handle Standard Error (Logging & Crashes)
+      pythonProcess.stderr.on("data", (data) => {
+        const message = data.toString();
+        
+        // Check if the log actually contains error-level keywords
+        if (message.toUpperCase().includes("ERROR") || message.toUpperCase().includes("CRITICAL")) {
+          controller.enqueue(encoder.encode(`❌ ${message}`));
+        } else {
+          // It's just an INFO or WARNING log, send it clean
+          controller.enqueue(encoder.encode(message));
+        }
+      });
 
-    // --- DEBUGGING LOGS ---
-    // This makes Python's print() statements show up in your VS Code terminal
-    pythonProcess.stdout.on("data", (data) => {
-      console.log(`[PYTHON]: ${data.toString()}`)
-    })
+      pythonProcess.on("close", (code) => {
+        const finalMsg = code === 0 
+          ? "\n✅ --- All Tasks Finished Successfully ---" 
+          : `\n⚠️ --- Process exited with code ${code} ---`;
+        
+        controller.enqueue(encoder.encode(finalMsg));
+        controller.close();
+      });
+    },
+  });
 
-    pythonProcess.stderr.on("data", (data) => {
-      console.error(`[PYTHON ERROR]: ${data.toString()}`)
-    })
-
-    return NextResponse.json({ 
-      message: "Local script execution started",
-      accountCount: payload.accounts.length 
-    }, { status: 200 })
-
-  } catch (error) {
-    console.error("API error:", error)
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 })
-  }
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 }
