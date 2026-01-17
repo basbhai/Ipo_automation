@@ -27,11 +27,13 @@ jobs:
         run: |
           echo "::add-mask::${{ toJson(github.event.client_payload.accounts )}}"
 
-      - name: Run IPO application script
+      - name: Run Apply Script
         env:
           ACCOUNTS_JSON: ${{ toJson(github.event.client_payload.accounts) }}
-        run: |
-          python scripts/apply.py
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          # This tells the bot to talk to your Vercel app
+          CALLBACK_URL: "https://v0-ipo-automator-git-uat3-basbhais-projects.vercel.app/api/callback"
+        run: python apply.py
 
       - name: Upload logs and results
         if: always()
