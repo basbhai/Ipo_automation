@@ -11,34 +11,34 @@
 
 Run the setup script to install all required packages and Playwright browsers:
 
-```bash
+\`\`\`bash
 bash scripts/setup.sh
-```
+\`\`\`
 
 Or manually:
 
-```bash
+\`\`\`bash
 pip install -r scripts/requirements.txt
 playwright install chromium
-```
+\`\`\`
 
 ### Step 2: Configure Environment Variables
 
 Create a `.env` file in the root directory with:
 
-```env
+\`\`\`env
 GITHUB_PAT=your_github_personal_access_token
 GITHUB_REPO=your_username/your_repo
 BROWSERLESS_TOKEN=optional_browserless_token
-```
+\`\`\`
 
 Or set them as system environment variables:
 
-```bash
+\`\`\`bash
 export GITHUB_PAT="your_token"
 export GITHUB_REPO="your_username/your_repo"
 export BROWSERLESS_TOKEN="optional_token"
-```
+\`\`\`
 
 ### Step 3: Run the Automation
 
@@ -52,11 +52,11 @@ The automation is triggered via GitHub Actions. Use the dashboard:
 
 Create a CSV file with the following headers:
 
-```csv
+\`\`\`csv
 dp,username,password,pin,crn,units
 ASBA-123456,user@example.com,password123,1234,1234567890123456,100
 ASBA-234567,user2@example.com,password456,5678,1234567890123457,200
-```
+\`\`\`
 
 ### Column Descriptions
 
@@ -73,10 +73,10 @@ ASBA-234567,user2@example.com,password456,5678,1234567890123457,200
 
 If you get "Playwright not installed" error:
 
-```bash
+\`\`\`bash
 pip install --upgrade playwright
 playwright install chromium
-```
+\`\`\`
 
 ### Browserless Token
 
@@ -98,10 +98,10 @@ The automation includes dedicated handling for Mero Share's Select2 dropdowns fo
 
 To test the script locally:
 
-```bash
+\`\`\`bash
 export ACCOUNTS_JSON='[{"dp":"ASBA-123456","username":"user@example.com","password":"pass","pin":"1234","crn":"1234567890123456","units":100}]'
 python scripts/apply.py
-```
+\`\`\`
 
 ## Security Notes
 
