@@ -33,7 +33,7 @@ jobs:
           GITHUB_RUN_ID: ${{ github.run_id }}
           # This tells the bot to talk to your Vercel app
           CALLBACK_URL: "https://v0-ipo-automator-git-uat3-basbhais-projects.vercel.app/api/callback"
-        run: python uat3apply.py
+        run: python scripts/uat3apply.py
 
       - name: Upload logs and results
         if: always()
