@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react"
 import Papa from "papaparse"
-import CryptoJS from "crypto-js"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import DashboardHeader from "@/components/dashboard-header"
@@ -11,13 +10,13 @@ import AccountsTable from "@/components/accounts-table"
 import ProcessingStatus from "@/components/processing-status"
 
 interface Account {
-  name: string;
-  dp: string; 
-  username: string; 
-  password: string; 
-  pin: string; 
-  crn: string; 
-  units: string;
+  name: string
+  dp: string
+  username: string
+  password: string
+  pin: string
+  crn: string
+  units: string
 }
 
 export default function DashboardPage() {
@@ -27,31 +26,31 @@ export default function DashboardPage() {
   const [logs, setLogs] = useState<string[]>([])
   const [showSummary, setShowSummary] = useState(false)
   const [results, setResults] = useState<Record<string, string>>({})
-  
+  const [workflowRunId, setWorkflowRunId] = useState<string | null>(null)
+
   const logEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [logs])
 
-  // --- LOG PARSER: Maps Python output back to Account Names ---
+  // --- LOG PARSER
   const parseLogForSummary = (line: string) => {
-    const userMatch = line.match(/(?:Account:|for|Account)\s*(\d+)/i);
+    const userMatch = line.match(/(?:Account:|for|Account)\s*(\d+)/i)
     if (userMatch) {
-      const userId = userMatch[1];
-      // Find the name in our state matching the ID from the log
-      const account = accounts.find(acc => String(acc.username) === String(userId));
-      const displayName = account ? account.name : `ID: ${userId}`;
+      const userId = userMatch[1]
+      const account = accounts.find(acc => String(acc.username) === String(userId))
+      const displayName = account ? account.name : `ID: ${userId}`
 
       if (line.includes("SUCCESS")) {
-        setResults(prev => ({ ...prev, [displayName]: "✅ Successfully Applied" }));
+        setResults(prev => ({ ...prev, [displayName]: "✅ Successfully Applied" }))
       } else if (line.includes("SKIP") || line.includes("Already")) {
-        setResults(prev => ({ ...prev, [displayName]: "ℹ️ Already Applied" }));
+        setResults(prev => ({ ...prev, [displayName]: "ℹ️ Already Applied" }))
       } else if (line.includes("FAIL") || line.includes("ERROR")) {
-        setResults(prev => ({ ...prev, [displayName]: "❌ Failed / Error" }));
+        setResults(prev => ({ ...prev, [displayName]: "❌ Failed / Error" }))
       }
     }
-  };
+  }
 
   const handleFileUpload = async (file: File) => {
     Papa.parse(file, {
@@ -74,61 +73,69 @@ export default function DashboardPage() {
     })
   }
 
-  const startProcess = async () => {
-    if (accounts.length === 0) return setStatus("No accounts loaded.")
+  // --- POLLING GitHub Action Logs
+  const pollLogs = async (runId: string) => {
+    const githubToken = process.env.NEXT_PUBLIC_GITHUB_PAT
+    if (!githubToken) return
 
     try {
+      const response = await fetch(
+        `https://api.github.com/repos/basbhai/Ipo_automation/actions/runs/${runId}/logs`,
+        {
+          headers: {
+            Authorization: `Bearer ${githubToken}`,
+            Accept: "application/vnd.github+json",
+          },
+        }
+      )
+      if (!response.ok) return
+      const text = await response.text()
+      text.split("\n").forEach(line => {
+        setLogs(prev => [...prev, line])
+        parseLogForSummary(line)
+      })
+    } catch (err) {
+      console.error("Polling Error:", err)
+    }
+  }
+
+  const startProcess = async () => {
+    if (accounts.length === 0) return setStatus("No accounts loaded.")
+    try {
       setIsProcessing(true)
-      setStatus("Encrypting & starting automation...")
-      setLogs([]) 
-      setResults({}) 
+      setStatus("Triggering GitHub Action...")
+      setLogs([])
+      setResults({})
       setShowSummary(false)
 
-      // 1. Encrypt Data
-      const secretKey = process.env.NEXT_PUBLIC_ENCRYPTION_KEY;
-      if (!secretKey) throw new Error("Encryption key missing in .env.local")
-      
-      const encryptedPayload = CryptoJS.AES.encrypt(
-        JSON.stringify(accounts), 
-        secretKey
-      ).toString();
-
-      // 2. Send Encrypted Payload
-      const response = await fetch("/api/local", {
+      // --- Send payload directly to Vercel API (no encryption) ---
+      const res = await fetch("/api/dispatch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payload: encryptedPayload }), 
+        body: JSON.stringify({ accounts }),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.message || "Dispatch failed")
 
-      if (!response.body) throw new Error("No response body")
+      setStatus("GitHub Action triggered. Polling logs...")
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
+      const runId = data.workflow_run_id
+      if (runId) setWorkflowRunId(runId)
 
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) {
-          setIsProcessing(false)
-          setShowSummary(true)
-          setStatus("✓ Process Complete.")
-          break
-        }
-
-        const chunk = decoder.decode(value, { stream: true })
-        chunk.split("\n").filter(l => l.trim()).forEach(line => {
-          parseLogForSummary(line) 
-          setLogs(prev => [...prev, line])
-        })
-      }
-    } catch (error: any) {
+      // Poll every 5 seconds
+      const interval = setInterval(async () => {
+        if (runId) await pollLogs(runId)
+      }, 5000)
+    } catch (err: any) {
       setStatus("Error starting process.")
-      setLogs(prev => [...prev, `❌ ERROR: ${error.message}`])
+      setLogs(prev => [...prev, `❌ ERROR: ${err.message}`])
       setIsProcessing(false)
     }
   }
 
   const downloadTemplate = () => {
-    const template = "name,dp,username,password,pin,crn,units\nbasanta,13000,12345678,Pass123,1111,100,10\n"
+    const template =
+      "name,dp,username,password,pin,crn,units\nbasanta,13000,12345678,Pass123,1111,100,10\n"
     const element = document.createElement("a")
     element.setAttribute("href", "data:text/csv;charset=utf-8," + encodeURIComponent(template))
     element.setAttribute("download", "template.csv")
@@ -142,10 +149,17 @@ export default function DashboardPage() {
         <div className="grid gap-6 md:grid-cols-2">
           <Card className="p-6">
             <h2 className="text-xl font-bold mb-4">1. Setup</h2>
-            <Button variant="outline" onClick={downloadTemplate} className="w-full mb-4">Download CSV Template</Button>
+            <Button variant="outline" onClick={downloadTemplate} className="w-full mb-4">
+              Download CSV Template
+            </Button>
             <CSVUploadArea onFileUpload={handleFileUpload} />
           </Card>
-          <ProcessingStatus status={status} accountsCount={accounts.length} isProcessing={isProcessing} onStartProcess={startProcess} />
+          <ProcessingStatus
+            status={status}
+            accountsCount={accounts.length}
+            isProcessing={isProcessing}
+            onStartProcess={startProcess}
+          />
         </div>
 
         {/* Console Logs */}
@@ -156,7 +170,12 @@ export default function DashboardPage() {
               {isProcessing && <span className="animate-pulse text-green-500">● LIVE</span>}
             </div>
             <div className="h-64 overflow-y-auto">
-              {logs.map((log, i) => <div key={i} className="opacity-90"><span className="text-slate-600 mr-2">{i+1}</span>{log}</div>)}
+              {logs.map((log, i) => (
+                <div key={i} className="opacity-90">
+                  <span className="text-slate-600 mr-2">{i + 1}</span>
+                  {log}
+                </div>
+              ))}
               <div ref={logEndRef} />
             </div>
           </Card>
@@ -170,20 +189,31 @@ export default function DashboardPage() {
               <div className="max-h-80 overflow-y-auto p-0">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-100 uppercase text-xs font-bold text-slate-500">
-                    <tr><th className="p-4 text-left">Name</th><th className="p-4 text-left">Status</th></tr>
+                    <tr>
+                      <th className="p-4 text-left">Name</th>
+                      <th className="p-4 text-left">Status</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y">
                     {Object.entries(results).map(([name, res]) => (
                       <tr key={name} className="hover:bg-slate-50">
                         <td className="p-4 font-semibold uppercase">{name}</td>
-                        <td className={`p-4 font-medium ${res.includes('✅') ? 'text-green-600' : 'text-red-500'}`}>{res}</td>
+                        <td
+                          className={`p-4 font-medium ${
+                            res.includes("✅") ? "text-green-600" : "text-red-500"
+                          }`}
+                        >
+                          {res}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
               <div className="p-4 bg-slate-50 border-t flex justify-end">
-                <Button onClick={() => setShowSummary(false)} className="bg-slate-900 text-white">Close Summary</Button>
+                <Button onClick={() => setShowSummary(false)} className="bg-slate-900 text-white">
+                  Close Summary
+                </Button>
               </div>
             </Card>
           </div>
