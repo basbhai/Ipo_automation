@@ -77,17 +77,17 @@ export default function DashboardPage() {
           if (log.status === "success") {
             newResults[displayName] = "✅ Successfully Applied"
           } else if (log.status === "skip") {
-            newResults[displayName] = "already applied"
+            newResults[displayName] = "ℹ️ Already Applied"
           } else {
-            newResults[displayName] = "Error!!!!"
+            newResults[displayName] = "❌ Error/Failed"
           }
         })
         setResults(prev => ({ ...prev, ...newResults }))
 
-        // 3. Logic: If the number of processed accounts (success/fail) equals total accounts, we are done
-        const processedCount = data.logs.filter((l: any) => l.status === "success" || l.status === "failed").length
+        // 3. Logic: If the number of processed accounts equals total accounts, we are done
+        const processedCount = data.logs.filter((l: any) => l.status === "success" || l.status === "failed" || l.status === "skip").length
         if (processedCount >= accounts.length && accounts.length > 0) {
-            return true // Signal completion
+            return true 
         }
       }
       return false
@@ -116,12 +116,13 @@ export default function DashboardPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.message || "Dispatch failed")
 
+      // --- HERE IS THE RUN ID ---
       const runId = data.workflow_run_id
       if (runId) {
-        setWorkflowRunId(runId)
+        setWorkflowRunId(runId) // Save it to state
         setStatus("Bot started! Watching live feed...")
         
-        // Start simple interval to check logs
+        // Start simple interval to check logs every 4 seconds
         const interval = setInterval(async () => {
           const isDone = await fetchLiveLogs(runId)
           if (isDone) {
@@ -197,7 +198,7 @@ export default function DashboardPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <Card className="w-full max-w-lg bg-white overflow-hidden shadow-2xl">
               <div className="p-6 bg-slate-50 border-b font-bold text-xl">Execution Summary</div>
-              <div className="max-h-80 overflow-y-auto">
+              <div className="max-h-80 overflow-y-auto p-0">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-100 uppercase text-xs font-bold text-slate-500">
                     <tr>
@@ -209,7 +210,7 @@ export default function DashboardPage() {
                     {Object.entries(results).map(([name, res]) => (
                       <tr key={name} className="hover:bg-slate-50">
                         <td className="p-4 font-semibold uppercase">{name}</td>
-                        <td className={`p-4 font-medium ${res.includes("✅") ? "text-green-600" : "text-red-500"}`}>{res}</td>
+                        <td className={`p-4 font-medium ${res.includes("✅") ? "text-green-600" : res.includes("ℹ️") ? "text-blue-500" : "text-red-500"}`}>{res}</td>
                       </tr>
                     ))}
                   </tbody>
