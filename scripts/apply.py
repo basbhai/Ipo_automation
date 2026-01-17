@@ -129,11 +129,6 @@ async def process_account(browser, account):
             await apply_btn.click()
             logger.info("SUCCESS: Apply form opened.")
             report_status(username, "processing", "Applying for share...")
-        elif await edit_btn.is_visible():
-            logger.info("SKIP: IPO already applied.")
-            report_status(username, "success", "Already applied for this IPO.")
-            await handle_logout(page)
-            return True
         else:
             report_status(username, "failed", "Apply/Edit button not visible.")
             await handle_logout(page)

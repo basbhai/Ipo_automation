@@ -76,10 +76,10 @@ export default function DashboardPage() {
 
           if (log.status === "success") {
             newResults[displayName] = "✅ Successfully Applied"
-          } else if (log.status === "failed") {
-            newResults[displayName] = "❌ Failed / Error"
+          } else if (log.status === "skip") {
+            newResults[displayName] = "already applied"
           } else {
-            newResults[displayName] = "⏳ Processing..."
+            newResults[displayName] = "Error!!!!"
           }
         })
         setResults(prev => ({ ...prev, ...newResults }))
