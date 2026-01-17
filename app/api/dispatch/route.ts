@@ -14,13 +14,29 @@ export async function POST(request: NextRequest) {
     const githubRepo = process.env.GITHUB_REPO // e.g., "basbhai/Ipo_automation"
 
     if (!githubToken || !githubRepo) {
+      return NextResponse.json({ message: "GitHub PAT or Repo variable missing in Vercel settings." }, { status: 500 })
+    }
+
+    if (githubRepo.startsWith("http://") || githubRepo.startsWith("https://")) {
       return NextResponse.json(
-        { message: "GitHub PAT or Repo variable missing in Vercel settings." },
-        { status: 500 }
+        {
+          message: `Invalid GITHUB_REPO format: "${githubRepo}". Expected format: "owner/repo" (e.g., "basbhai/Ipo_automation"). Remove the URL prefix.`,
+        },
+        { status: 400 },
       )
     }
 
-    const [owner, repo] = githubRepo.replace(".git", "").split("/")
+    const repoParts = githubRepo.replace(".git", "").split("/")
+    if (repoParts.length !== 2 || !repoParts[0] || !repoParts[1]) {
+      return NextResponse.json(
+        {
+          message: `Invalid GITHUB_REPO format: "${githubRepo}". Expected format: "owner/repo" (e.g., "basbhai/Ipo_automation").`,
+        },
+        { status: 400 },
+      )
+    }
+
+    const [owner, repo] = repoParts
 
     // 2️⃣ Trigger GitHub Action
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {
@@ -44,7 +60,7 @@ export async function POST(request: NextRequest) {
     // 3️⃣ Get latest workflow run ID for frontend polling
     const runsRes = await fetch(
       `https://api.github.com/repos/${owner}/${repo}/actions/runs?event=repository_dispatch&per_page=1`,
-      { headers: { Authorization: `Bearer ${githubToken}` } }
+      { headers: { Authorization: `Bearer ${githubToken}` } },
     )
     const runsJson = await runsRes.json()
     const runId = runsJson.workflow_runs?.[0]?.id
