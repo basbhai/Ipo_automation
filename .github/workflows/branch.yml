@@ -1,8 +1,8 @@
-name: Mero Share IPO Bulk Applicator
+name: UAT-3 bot
 
 on:
   repository_dispatch:
-    types: [trigger_ipo_bot]
+    types: [ipo_bot]
 
 jobs:
   apply_ipo:
@@ -31,7 +31,7 @@ jobs:
         env:
           ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
         run: |
-          python scripts/apply.py
+          python scripts/uat3apply.py
 
       - name: Upload logs and results
         if: always()
