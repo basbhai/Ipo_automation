@@ -117,14 +117,14 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.message || "Dispatch failed")
 
       // --- HERE IS THE RUN ID ---
-      const workflowRunId = data.workflow_run_id
-      if (workflowRunId) {
-        setWorkflowRunId(workflowRunId) // Save it to state
+      const runId = data.workflow_run_id
+      if (runId) {
+        setWorkflowRunId(runId) // Save it to state
         setStatus("Bot started! Watching live feed...")
         
         // Start simple interval to check logs every 4 seconds
         const interval = setInterval(async () => {
-          const isDone = await fetchLiveLogs(workflowRunId)
+          const isDone = await fetchLiveLogs(runId)
           if (isDone) {
             clearInterval(interval)
             setIsProcessing(false)
