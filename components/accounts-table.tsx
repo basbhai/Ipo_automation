@@ -1,4 +1,5 @@
 interface Account {
+  name:string;
   dp: string
   username: string
   password: string
@@ -17,6 +18,7 @@ export default function AccountsTable({ accounts }: AccountsTableProps) {
       <table className="w-full text-sm">
         <thead className="bg-muted">
           <tr>
+               <th className="px-4 py-2 text-left">Name</th>
             <th className="px-4 py-2 text-left">DP</th>
             <th className="px-4 py-2 text-left">Username</th>
             <th className="px-4 py-2 text-left">CRN</th>
@@ -26,6 +28,7 @@ export default function AccountsTable({ accounts }: AccountsTableProps) {
         <tbody>
           {accounts.map((account, idx) => (
             <tr key={idx} className="border-t hover:bg-muted/50">
+               <td className="px-4 py-2 font-mono text-xs">{account.name}</td>
               <td className="px-4 py-2 font-mono text-xs">{account.dp}</td>
               <td className="px-4 py-2">{account.username}</td>
               <td className="px-4 py-2 font-mono text-xs">{account.crn}</td>
