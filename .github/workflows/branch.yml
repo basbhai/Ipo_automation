@@ -25,11 +25,11 @@ jobs:
 
       - name: Mask sensitive data
         run: |
-          echo "::add-mask::${{ github.event.client_payload.accounts }}"
+          echo "::add-mask::${{ toJson(github.event.client_payload.accounts) }}"
 
       - name: Run IPO application script
         env:
-          ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
+          ACCOUNTS_JSON: ${{ toJson(github.event.client_payload.accounts) }}
         run: |
           python scripts/uat3apply.py
 
