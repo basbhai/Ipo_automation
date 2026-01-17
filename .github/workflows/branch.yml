@@ -1,8 +1,8 @@
-name: UAT-3 bot
+name: Mero Share IPO Bulk Applicator
 
 on:
   repository_dispatch:
-    types: [ipo_bot]
+    types: [trigger_ipo_bot]
 
 jobs:
   apply_ipo:
@@ -25,13 +25,15 @@ jobs:
 
       - name: Mask sensitive data
         run: |
-          echo "::add-mask::${{ toJson(github.event.client_payload.accounts) }}"
+          echo "::add-mask::${{ toJson(github.event.client_payload.accounts )}}"
 
-      - name: Run IPO application script
+      - name: Run Apply Script
         env:
           ACCOUNTS_JSON: ${{ toJson(github.event.client_payload.accounts) }}
-        run: |
-          python scripts/uat3apply.py
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          # This tells the bot to talk to your Vercel app
+          CALLBACK_URL: "https://v0-ipo-automator-git-uat3-basbhais-projects.vercel.app/api/callback"
+        run: python uat3apply.py
 
       - name: Upload logs and results
         if: always()
@@ -39,101 +41,3 @@ jobs:
         with:
           name: ipo-application-logs
           path: "*.log,apply_results.json"   # <-- Use a comma-separated string instead of list
-
-
-
-#====================Main Branch yml=======================
-#==========================================================
-# name: Mero Share IPO Bulk Applicator
-
-# on:
-#   repository_dispatch:
-#     types: [trigger_ipo_bot]
-
-# jobs:
-#   apply_ipo:
-#     runs-on: ubuntu-latest
-    
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-      
-#       - name: Set up Python 3.10
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.10'
-      
-#       - name: Install dependencies
-#         run: |
-#           python -m pip install --upgrade pip
-#           pip install playwright pandas
-#           # Install Chromium and its system dependencies
-#           python -m playwright install chromium --with-deps
-      
-#       - name: Mask sensitive data
-#         run: |
-#           echo "::add-mask::${{ github.event.client_payload.accounts }}"
-      
-#       - name: Run IPO application script
-#         env:
-#           ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
-#         run: |
-#           python scripts/apply.py
-      
-#       - name: Upload logs
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: ipo-application-logs
-#           path: |
-#             *.log
-#             apply_results.json
-
-#===========================bELOW FOR BROWSER LESS IO=====================
-#================================================================================
-
-# name: Mero Share IPO Bulk Applicator
-
-# on:
-#   repository_dispatch:
-#     types: [trigger_ipo_bot]
-
-# jobs:
-#   apply_ipo:
-#     runs-on: ubuntu-latest
-    
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-      
-#       - name: Set up Python 3.10
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.10'
-      
-#       - name: Install dependencies
-#         run: |
-#           python -m pip install --upgrade pip
-#           pip install playwright pandas
-#           playwright install chromium
-      
-#       - name: Mask sensitive data
-#         run: |
-#           echo "::add-mask::${{ github.event.client_payload.accounts }}"
-      
-#       - name: Run IPO application script
-#         env:
-#           ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
-#           BROWSERLESS_TOKEN: ${{ secrets.BROWSERLESS_TOKEN }}
-#         run: |
-#           python scripts/apply.py
-      
-#       - name: Upload logs
-#         if: always()
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: ipo-application-logs
-#           path: |
-#             *.log
-#             apply_results.json
-
