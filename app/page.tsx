@@ -75,7 +75,7 @@ export default function DashboardPage() {
 
   // --- POLLING GitHub Action Logs
   const pollLogs = async (runId: string) => {
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_PAT
+    const githubToken = process.env.GITHUB_PAT
     if (!githubToken) return
 
     try {
