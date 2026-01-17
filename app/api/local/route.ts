@@ -1,21 +1,31 @@
 import { type NextRequest } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
+import CryptoJS from "crypto-js";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const accounts = body.accounts; 
-    
-    const scriptPath = path.join(process.cwd(), "scripts", "localapply.py");
-    const accountsData = JSON.stringify(accounts);
+    const { payload } = await request.json();
+    const secretKey = process.env.NEXT_PUBLIC_ENCRYPTION_KEY;
 
+    if (!secretKey || !payload) {
+      return new Response("Missing security parameters", { status: 401 });
+    }
+
+    // --- DECRYPTION ---
+    const bytes = CryptoJS.AES.decrypt(payload, secretKey);
+    const decryptedData = bytes.toString(CryptoJS.enc.Utf8);
+
+    if (!decryptedData) {
+      return new Response("Decryption Failed", { status: 403 });
+    }
+
+    const scriptPath = path.join(process.cwd(), "scripts", "localapply.py");
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
       start(controller) {
-        // Run Python script
-        const pythonProcess = spawn("python", [scriptPath, accountsData]);
+        const pythonProcess = spawn("python", [scriptPath, decryptedData]);
 
         pythonProcess.stdout.on("data", (data) => {
           controller.enqueue(encoder.encode(data.toString()));
@@ -25,8 +35,7 @@ export async function POST(request: NextRequest) {
           controller.enqueue(encoder.encode(data.toString()));
         });
 
-        pythonProcess.on("close", (code) => {
-          // This specific string triggers the "Finished" state in frontend
+        pythonProcess.on("close", () => {
           controller.enqueue(encoder.encode(`\n--- FINISHED ---`));
           controller.close();
         });
@@ -37,7 +46,6 @@ export async function POST(request: NextRequest) {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
       },
     });
   } catch (error) {
