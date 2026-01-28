@@ -1,4 +1,4 @@
-name: IPO_applier
+name: IPO Bulk Applicator
 
 on:
   repository_dispatch:
@@ -9,36 +9,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install playwright pandas
-          pip install playwright requests
           python -m playwright install chromium --with-deps
 
       - name: Mask sensitive data
         run: |
-          echo "::add-mask::${{ toJson(github.event.client_payload.accounts )}}"
+          echo "::add-mask::${{ github.event.client_payload.accounts }}"
 
-      - name: Run Apply Script
+      - name: Run IPO automation script
         env:
-          ACCOUNTS_JSON: ${{ toJson(github.event.client_payload.accounts) }}
-          GITHUB_RUN_ID: ${{ github.run_id }}
-          # This tells the bot to talk to your Vercel app
-          CALLBACK_URL: "https://v0-ipo-automator-git-uat3-basbhais-projects.vercel.app/api/callback"
-        run: python scripts/uat3apply.py
+          ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
+        run: |
+          python scripts/uat3apply.py
 
-      - name: Upload logs and results
+      - name: Upload logs artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ipo-application-logs
-          path: "*.log,apply_results.json"   # <-- Use a comma-separated string instead of list
+          path: ipo-application.log
+          retention-days: 7

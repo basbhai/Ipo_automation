@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
         "X-GitHub-Api-Version": "2022-11-28",
       },
       body: JSON.stringify({
-        event_type: "trigger_ipo_bot",
+        event_type: "ipo_bot",
         client_payload: {
           accounts: accountsJson,
         },
