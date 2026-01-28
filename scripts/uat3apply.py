@@ -4,205 +4,224 @@ import os
 import sys
 import random
 import logging
-import requests  # Required for pushing data to Vercel
 
-# Setup Logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# ================= LOGGING =================
+LOG_FILE = "ipo-application.log"
+
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-# --- CALLBACK SETTINGS ---
-# These are passed from your GitHub Action workflow env
-CALLBACK_URL = os.getenv('CALLBACK_URL') 
-RUN_ID = os.getenv('GITHUB_RUN_ID', 'local-development')
+formatter = logging.Formatter(
+    "%(asctime)s - %(levelname)s - %(message)s"
+)
 
-def report_status(username, status, message):
-    """
-    Pushes status updates to the Vercel callback API.
-    status: 'processing', 'success', or 'failed'
-    """
-    if not CALLBACK_URL:
-        logger.info(f"Report (No Callback URL): {username} | {status} | {message}")
-        return
-    
-    payload = {
-        "runId": RUN_ID,
-        "username": username,
-        "status": status,
-        "message": message
-    }
-    
-    try:
-        # 5 second timeout to ensure the bot doesn't hang if the API is slow
-        requests.post(CALLBACK_URL, json=payload, timeout=5)
-    except Exception as e:
-        logger.error(f"Failed to push status to Vercel: {str(e)}")
+# Console logging (GitHub Actions UI)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
 
+# File logging (Artifact)
+file_handler = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
+file_handler.setFormatter(formatter)
+
+# Avoid duplicate handlers
+if not logger.handlers:
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+# ================= PLAYWRIGHT =================
 try:
     from playwright.async_api import async_playwright
 except ImportError:
-    logger.error("Playwright not installed.")
+    logger.error("Playwright not installed. Run: pip install playwright")
     sys.exit(1)
 
+# ================= LOGOUT =================
 async def handle_logout(page):
-    """Handles the logout process using the provided DOM structure."""
     try:
-        logger.info("Step: Attempting to logout...")
-        logout_selector = "li.header-menu__item--logout-desktop-view a.nav-link"
-        
-        await page.wait_for_selector(logout_selector, timeout=5000)
-        await page.click(logout_selector)
-        
+        logger.info("Logging out...")
+        selector = "li.header-menu__item--logout-desktop-view a.nav-link"
+        await page.wait_for_selector(selector, timeout=5000)
+        await page.click(selector)
         await page.wait_for_url("**/#/login", timeout=10000)
-        logger.info("Successfully logged out.")
+        logger.info("Logout successful")
         return True
     except Exception as e:
-        logger.warning(f"Logout failed or timed out: {str(e)}")
+        logger.warning(f"Logout skipped or failed: {e}")
         return False
 
-async def select_login_dp(page, bank_code):
-    """Handles the DP dropdown on the LOGIN page."""
+# ================= DP SELECTION =================
+async def select_login_dp(page, dp_code):
     try:
-        logger.info(f"Step: Opening DP dropdown to search for {bank_code}...")
         await page.click("span.select2-selection--single")
         await page.wait_for_timeout(500)
-        
-        search_input = page.locator("input.select2-search__field")
-        await search_input.fill(str(bank_code))
-        await page.wait_for_timeout(1000) 
-        
-        option_locator = page.locator(f"li.select2-results__option:has-text('({bank_code})')")
-        
-        if await option_locator.is_visible():
-            await option_locator.click()
-            logger.info(f"SUCCESS: DP {bank_code} selected.")
+
+        search = page.locator("input.select2-search__field")
+        await search.fill(str(dp_code))
+        await page.wait_for_timeout(1000)
+
+        option = page.locator(
+            f"li.select2-results__option:has-text('({dp_code})')"
+        )
+
+        if await option.is_visible():
+            await option.click()
+            logger.info("DP selected")
             return True
-        else:
-            logger.error(f"FAIL: Could not find DP result for code {bank_code}.")
-            return False
-    except Exception as e:
-        logger.error(f"EXCEPTION selecting DP: {str(e)}")
+
+        logger.error("DP not found")
         return False
 
+    except Exception as e:
+        logger.error(f"DP selection error: {e}")
+        return False
+
+# ================= ACCOUNT PROCESSOR =================
 async def process_account(browser, account):
     context = None
-    username = account.get('username', 'Unknown')
-    
     try:
-        # --- PUSH: START ---
-        report_status(username, "processing", "Starting login and navigation...")
-        
-        context = await browser.new_context(ignore_https_errors=True, viewport={'width': 1280, 'height': 800})
+        context = await browser.new_context(
+            ignore_https_errors=True,
+            viewport={"width": 1280, "height": 800}
+        )
         page = await context.new_page()
-        
-        # 1. Login
-        logger.info(f"--- Starting Account: {username} ---")
-        await page.goto("https://meroshare.cdsc.com.np/", wait_until="networkidle", timeout=60000)
-        
-        if not await select_login_dp(page, account['dp']):
-            report_status(username, "failed", f"Failed to select DP {account['dp']}")
+
+        logger.info(f"===== PROCESSING: {account['username']} =====")
+
+        # ---------- LOGIN ----------
+        await page.goto(
+            "https://meroshare.cdsc.com.np/",
+            wait_until="networkidle",
+            timeout=60000
+        )
+
+        if not await select_login_dp(page, account["dp"]):
             return False
 
-        await page.fill("#username", str(account['username']))
-        await page.fill("#password", str(account['password']))
+        await page.fill("#username", str(account["username"]))
+        await page.fill("#password", str(account["password"]))
         await page.click("button[type='submit']")
-        
+
         await page.wait_for_selector(".navbar", timeout=20000)
-        logger.info("✅ Login Successful!")
+        logger.info("Login successful")
 
-        # 2. Navigate to ASBA
-        await page.goto("https://meroshare.cdsc.com.np/#/asba", wait_until="networkidle")
-        await page.wait_for_timeout(2000)
+        # ---------- ASBA ----------
+        await page.goto(
+            "https://meroshare.cdsc.com.np/#/asba",
+            wait_until="networkidle"
+        )
 
-        # 3. Find Ordinary Share & Click Apply
-        ipo_row = page.locator(".company-list", has=page.locator("span.isin", has_text="Ordinary Shares")).first
-        
-        if await ipo_row.count() == 0:
-            logger.warning("FAIL: No active 'Ordinary Shares' found.")
-            report_status(username, "failed", "No active Ordinary Shares found.")
+        await page.wait_for_selector(".company-list", timeout=20000)
+        await page.wait_for_function(
+            "() => document.querySelectorAll('.company-list span.isin').length > 0"
+        )
+
+        rows = page.locator(".company-list")
+        total = await rows.count()
+        ipo_row = None
+
+        for i in range(total):
+            row = rows.nth(i)
+            isin_text = (await row.locator("span.isin").inner_text()).strip().lower()
+            share_type = (await row.locator("span.share-of-type").inner_text()).strip().lower()
+
+            if "ordinary" in isin_text and "ipo" in share_type:
+                ipo_row = row
+                break
+
+        if not ipo_row:
+            logger.warning("No active Ordinary IPO found")
             await handle_logout(page)
             return False
 
-        apply_btn = ipo_row.locator("button.btn-issue:has-text('Apply')")
-        edit_btn = ipo_row.locator("button.btn-issue:has-text('Edit')")
+        logger.info("Ordinary IPO located")
+
+        # ---------- APPLY / EDIT ----------
+        apply_btn = ipo_row.locator("button.btn-issue i").filter(has_text="Apply").locator("..")
+        edit_btn = ipo_row.locator("button.btn-issue i").filter(has_text="Edit").locator("..")
 
         if await apply_btn.is_visible():
             await apply_btn.click()
-            logger.info("SUCCESS: Apply form opened.")
-            report_status(username, "processing", "Applying for share...")
+            logger.info("Apply clicked")
+        elif await edit_btn.is_visible():
+            logger.info("Already applied")
+            await handle_logout(page)
+            return True
         else:
-            report_status(username, "failed", "Apply/Edit button not visible.")
+            logger.warning("Apply/Edit button missing")
             await handle_logout(page)
             return False
 
-        # 4. Wizard Step 1: Form Filling
+        # ---------- FORM STEP 1 ----------
         await page.wait_for_selector("#selectBank", state="visible")
         await page.select_option("#selectBank", index=1)
-        
-        await page.wait_for_selector("#accountNumber option:not([value=''])", state="attached")
+
+        await page.wait_for_selector(
+            "#accountNumber option:not([value=''])",
+            state="attached"
+        )
         await page.select_option("#accountNumber", index=1)
-        
-        await page.wait_for_timeout(1000)
-        await page.fill("#appliedKitta", str(account['units']))
-        await page.focus("#appliedKitta")
-        await page.keyboard.press("Tab") 
-        await page.locator("#appliedKitta").dispatch_event("blur")
-        
-        await page.wait_for_timeout(1000)
-        amount = await page.input_value("#amount")
-        
-        await page.fill("#crnNumber", str(account['crn']))
+
+        await page.fill("#appliedKitta", str(account["units"]))
+        await page.keyboard.press("Tab")
+        await page.fill("#crnNumber", str(account["crn"]))
         await page.check("#disclaimer", force=True)
-        
+
         await page.click("button[type='submit']:has-text('Proceed')")
 
-        # 5. Wizard Step 2: PIN & Final Submit
+        # ---------- FORM STEP 2 ----------
         await page.wait_for_selector("#transactionPIN", state="visible")
-        await page.fill("#transactionPIN", str(account['pin']))
-        
+        await page.fill("#transactionPIN", str(account["pin"]))
         await page.click("button[type='submit']:has-text('Apply')")
-        await page.wait_for_timeout(2000)
-        
-        logger.info(f"🚀 SUCCESS: IPO submitted for {username}!")
-        # --- PUSH: SUCCESS ---
-        report_status(username, "success", f"Applied {account['units']} units. Total: NPR {amount}")
-        
+
+        # ---------- TOAST VERIFICATION ----------
+        toast = page.locator("#toast-container .toast-message")
+        try:
+            await toast.wait_for(state="visible", timeout=8000)
+            message = await toast.inner_text()
+            is_success = await page.locator(".toast-success").is_visible()
+
+            if is_success:
+                logger.info(f"SUCCESS: {message}")
+            else:
+                logger.error(f"FAILED: {message}")
+        except Exception:
+            logger.warning("No toast message detected")
+
+        await page.wait_for_timeout(1000)
         await handle_logout(page)
         return True
 
     except Exception as e:
-        logger.error(f"CRITICAL ERROR for {username}: {str(e)}")
-        # --- PUSH: ERROR ---
-        report_status(username, "failed", f"Error: {str(e)[:50]}...")
+        logger.error(f"CRITICAL ERROR for {account.get('username')}: {e}")
         return False
+
     finally:
         if context:
             await context.close()
 
+# ================= MAIN =================
 async def main():
-    try:
-        accounts_json = os.getenv('ACCOUNTS_JSON', '[]')
-        accounts = json.loads(accounts_json)
+    accounts_json = os.getenv("ACCOUNTS_JSON")
+    if not accounts_json:
+        logger.error("ACCOUNTS_JSON environment variable missing")
+        return
 
-        if not accounts:
-            logger.error("No accounts found in ACCOUNTS_JSON environment variable.")
-            return
+    accounts = json.loads(accounts_json)
 
-        async with async_playwright() as p:
-            logger.info("Launching local Chromium...")
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox"]
-            )
-            
-            try:
-                for account in accounts:
-                    await process_account(browser, account)
-                    # Gentle delay between accounts to avoid rate limiting
-                    await asyncio.sleep(random.uniform(5, 10))
-            finally:
-                await browser.close()
-    except Exception as e:
-        logger.error(f"FATAL ERROR: {str(e)}")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
+        )
+
+        try:
+            for account in accounts:
+                await process_account(browser, account)
+                wait_time = random.uniform(5, 10)
+                logger.info(f"Waiting {wait_time:.2f}s before next account")
+                await asyncio.sleep(wait_time)
+        finally:
+            await browser.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
