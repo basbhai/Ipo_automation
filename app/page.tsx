@@ -22,6 +22,7 @@ export default function DashboardPage() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [status, setStatus] = useState<string>("")
+  const [uploadId, setUploadId] = useState<string | null>(null)
 
   const downloadTemplate = () => {
     const template = "dp,username,password,pin,crn,units\n1234567,user@meroshare,password123,1234,12345678,100\n"
@@ -80,11 +81,6 @@ export default function DashboardPage() {
       return
     }
 
-    if (!process.env.NEXT_PUBLIC_APP_NAME) {
-      setStatus("Application not properly configured. Contact administrator.")
-      return
-    }
-
     try {
       setIsProcessing(true)
       setStatus("Initiating IPO application process...")
@@ -102,6 +98,8 @@ export default function DashboardPage() {
       const responseData = await response.json()
 
       if (response.ok) {
+        const newUploadId = responseData.uploadId
+        setUploadId(newUploadId)
         setStatus("✓ Process initiated! Check GitHub Actions for real-time progress.")
       } else {
         setStatus(`Error: ${responseData.message || "Failed to start process"}`)
@@ -138,6 +136,7 @@ export default function DashboardPage() {
             accountsCount={accounts.length}
             isProcessing={isProcessing}
             onStartProcess={startProcess}
+            uploadId={uploadId}
           />
         </div>
 

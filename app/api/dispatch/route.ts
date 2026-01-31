@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { randomUUID } from "crypto"
 
 interface DispatchPayload {
   accounts: Array<{
@@ -53,10 +54,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Generate a unique upload ID for this workflow run
+    const uploadId = randomUUID().split('-')[0] // Use first part of UUID for shorter artifact naming
+
     // Convert accounts to JSON string for GitHub dispatch
     const accountsJson = JSON.stringify(payload.accounts)
 
-    console.log(`[v0] Dispatching to GitHub: owner=${owner}, repo=${repo}`)
+    console.log(`[v0] Dispatching to GitHub: owner=${owner}, repo=${repo}, uploadId=${uploadId}`)
 
     // Trigger GitHub Actions workflow
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/dispatches`, {
@@ -69,6 +73,7 @@ export async function POST(request: NextRequest) {
         event_type: "ipo_bot",
         client_payload: {
           accounts: accountsJson,
+          uploadId: uploadId,
         },
       }),
     })
@@ -84,7 +89,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ message: "IPO application process initiated successfully" }, { status: 200 })
+    return NextResponse.json({ 
+      message: "IPO application process initiated successfully",
+      uploadId: uploadId
+    }, { status: 200 })
   } catch (error) {
     console.error("API error:", error)
     return NextResponse.json({ message: "Internal server error" }, { status: 500 })
