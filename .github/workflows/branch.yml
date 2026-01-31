@@ -1,6 +1,12 @@
 name: IPO Bulk Applicator
 
 on:
+  workflow_dispatch:
+    inputs:
+      upload_id:
+        description: "Upload ID from frontend"
+        required: true
+
   repository_dispatch:
     types: [ipo_bot]
 
@@ -30,6 +36,7 @@ jobs:
       - name: Run IPO automation script
         env:
           ACCOUNTS_JSON: ${{ github.event.client_payload.accounts }}
+          UPLOAD_ID: ${{ inputs.upload_id || github.event.client_payload.upload_id }}
         run: |
           python scripts/uat3apply.py
 
@@ -37,6 +44,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ipo-application-logs
+          name: logs-${{ inputs.upload_id || github.event.client_payload.upload_id }}
           path: ipo-application.log
           retention-days: 7
